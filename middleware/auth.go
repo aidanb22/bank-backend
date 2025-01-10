@@ -1,64 +1,50 @@
-// middleware/auth.go
 package middleware
 
 import (
-	"bank-app/utils" // Ensure this path matches your module path
-	"github.com/golang-jwt/jwt/v5"
+	"bank-app/utils"
+	"context"
 	"log"
 	"net/http"
 	"strings"
 )
 
+type contextKey string
+
+const userIDKey = contextKey("userID")
+
+// AuthMiddleware validates JWT tokens and sets the user ID in the context
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Println("Authenticating request for:", r.URL.Path)
-
+		// Get the Authorization header
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			log.Println("Missing Authorization header")
-			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+			http.Error(w, "Unauthorized: No token provided", http.StatusUnauthorized)
 			return
 		}
 
+		// Expect header value in the format "Bearer <token>"
 		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			log.Println("Invalid Authorization header format")
-			http.Error(w, "Invalid Authorization header format", http.StatusUnauthorized)
+		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+			http.Error(w, "Unauthorized: Invalid token format", http.StatusUnauthorized)
 			return
 		}
 
 		tokenStr := parts[1]
-		claims := &jwt.MapClaims{}
-
-		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-			return utils.JwtKey, nil
-		})
-
+		claims, err := utils.ValidateJWT(tokenStr)
 		if err != nil {
-			log.Println("Error parsing token:", err)
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			log.Println("Token validation failed:", err)
+			http.Error(w, "Unauthorized: Invalid token", http.StatusUnauthorized)
 			return
 		}
 
-		if !token.Valid {
-			log.Println("Invalid token")
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		// Optionally, extract user information and set it in context
-		// userID, ok := (*claims)["user_id"].(string)
-		// if ok {
-		//     ctx := context.WithValue(r.Context(), "userID", userID)
-		//     next.ServeHTTP(w, r.WithContext(ctx))
-		// } else {
-		//     http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-		//     return
-		// }
-
-		log.Println("Authentication successful for user_id:", (*claims)["user_id"])
-
-		// Proceed to the next handler
-		next.ServeHTTP(w, r)
+		// Set the user ID in the request context
+		ctx := context.WithValue(r.Context(), userIDKey, claims.UserID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// GetUserID retrieves the user ID from the context
+func GetUserID(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDKey).(string)
+	return userID, ok
 }

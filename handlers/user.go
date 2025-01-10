@@ -126,7 +126,7 @@ func LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Login attempt for email: '%s', password: '%s'", creds.Email, creds.Password)
+	log.Printf("Login attempt for email: '%s'", creds.Email)
 
 	// Get the user from MongoDB
 	collection := database.GetCollection("bank", "users")
@@ -143,25 +143,28 @@ func LoginUser(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("User found: %s, hashedPassword in DB: %s", user.Email, user.Password)
 
-	// Double-check that we do NOT hash user.Password here!
-	// Just compare the plain-text from the request to the stored hash
-	log.Printf("Manual test: comparing '%s' to DB password '%s'", creds.Password, user.Password)
+	// Compare the provided password with the stored hash
 	if !checkPasswordHash(creds.Password, user.Password) {
 		log.Println("Password mismatch")
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
-	// Generate JWT on success
+	// Generate JWT token
 	token, err := utils.GenerateJWT(user.ID.Hex())
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return
 	}
 
-	log.Println("Login successful")
+	log.Println("Login successful for user:", user.Email)
+
+	// Respond with the token
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	json.NewEncoder(w).Encode(map[string]string{
+		"token":   token,
+		"message": "Login successful",
+	})
 }
 
 // -------------------
